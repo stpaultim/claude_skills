@@ -1,6 +1,6 @@
 ---
 name: backdrop-layout-edit
-description: Edit a Backdrop CMS layout — add, move, reorder, or remove blocks; change block settings or visibility conditions; create a new layout; or ship a layout as default config in a module. Use whenever the user asks to add/move/remove a block, reorganize a layout, change which region something appears in, edit `layout.layout.*.json`, fix a layout that's missing a title/messages/tabs block, or wire up a default layout for a module's `config/` directory. Also use proactively when the user reports "the messages aren't showing", "the title disappeared", "tabs are missing on this page" — these are usually layout block placement issues.
+description: Edit a Backdrop CMS layout — add, move, reorder, or remove blocks; change block settings or visibility conditions; create a new layout; or ship a layout as default config in a module. Use whenever the user asks to add/move/remove a block, reorganize a layout, change which region something appears in, edit `layout.layout.*.json`, fix a layout that's missing a title/messages/tabs block, or wire up a default layout for a module's `config/` directory. Also use when the user wants full-width blocks, background bands, or edge-to-edge sections, or is working with flexible layout templates or the Configurable Block Style module. Also use proactively when the user reports "the messages aren't showing", "the title disappeared", "tabs are missing on this page" — these are usually layout block placement issues.
 ---
 
 # Backdrop layout editing
@@ -275,6 +275,25 @@ config_set('layout.layout.default', 'content.' . $block->uuid . '.data.condition
 - **`storage: 4` (module-provided) layouts can't be edited via UI** until they're "overridden" (becomes `storage: 2`). Don't manually flip storage in JSON; let the user override via UI, or ship `storage: 2` to begin with.
 - **After editing JSON in active config**: run `bee cc all` so the cached layout config is rebuilt. The Layout API path doesn't need this — `$layout->save()` invalidates correctly.
 - **After editing a module's `config/` defaults**: existing sites won't pick up the change. Either re-run `bee config-import` for that file, or write an update hook that calls `config_install_default_config('<module>')` (which only imports configs not already present in active).
+- **The layout editor saves from a tempstore draft.** "Save layout" writes the whole draft back, overwriting any config changes made via script/bee while the editor was open. Don't edit the same layout in the UI and from the CLI at the same time; if you must, tell the person to reload the editor before saving.
+
+## Full-width blocks (flexible templates + Configurable Block Style)
+
+To make blocks span the full page width (e.g. tinted background bands) on interior pages:
+
+- **Only a core flexible template can do it.** Every standard template (Boxton, Moscone, Harris, etc.) and contrib "flexible" variants like Harris Flexible wrap all body regions in `.l-wrapper-inner.container` (max-width ~72rem). No block style can escape that. Use a core flexible template (Layouts → Flexible templates) with a row whose width is **Full width** (`container: no_container`). Other row options: `container` (fixed max width), `container_fluid`.
+- **Recipe with the Configurable Block Style module** (contrib; Tim co-maintains):
+  1. Place all page-body blocks, including Main page content, in the full-width row. One row lets plain and tinted blocks interleave in any order — don't split into a fixed row plus a full-width row.
+  2. Set each block's style to Configurable and enable **Content container** (Behaviors). The block background spans the viewport; an inner `.container` keeps text aligned with the header/title. Do this on Main page content too, or body text runs edge to edge.
+  3. For a band: Colors → custom background (+ optional Tint), and Padding so the title doesn't touch the band edge.
+- **Config paths** (under `content.<uuid>.data.style`): `plugin` = `configurable`; `data.settings.content_container`, `content_padding`, `padding_top|right|bottom|left`, `color_type` (`default`/`custom`), `background_color`, `text_color`, `tint`, `tint_value`. Unset settings fall back to the style class defaults, so `array('plugin' => 'configurable', 'data' => array('settings' => array('content_container' => 1)))` is a valid minimal style.
+- **Flexible template specifics:**
+  - Region keys are `<row id>--<n>` (e.g. `86247ddb-…--0`), not readable names. Rows are keyed by UUID when created in the UI.
+  - `layout--flexible.tpl.php` doesn't print `$messages`: add a `system:page_components:messages` block (see the messages gotcha above).
+  - Create one in code with `new LayoutFlexibleTemplate(array('name' => ..., 'title' => ..., 'rows' => $rows, 'is_full_page' => TRUE))` then `->save()` (config `layout.flexible.<name>`). Each row: `contains` (`region_12` = one region), `element` (`header`, `div`, `main`, `footer`, …), `container`, `classes`, `region_names.region_0.{label,name,classes}`.
+  - Switch a layout's template with `$layout->setLayoutTemplate($name, $region_map)`, where `$region_map` maps old region names to new region keys; unmapped regions' blocks are dropped.
+- **Theme gotcha — sideways scroll in full-width rows.** The grid row inside every flexible row (`.l-flexible-row.row`) has `-0.9375rem` side margins, normally cancelled by column padding. If the theme zeroes `.col-md-12` padding (Opera does in `base.css`), a full-width row overflows the viewport by ~30px and the page scrolls sideways. Fix in the theme: `.no-container > .l-flexible-row { margin-left: 0; margin-right: 0; }`.
+- **Verify visually.** Headless Chrome works when the browser extension isn't available: `google-chrome --headless=new --ignore-certificate-errors --window-size=1400,900 --screenshot=out.png <url>` (omit `--hide-scrollbars` to see horizontal overflow).
 
 ## Shipping a layout as a module default
 
